@@ -322,6 +322,7 @@ td { padding: 8px 12px; border: 1px solid var(--border); vertical-align: top; }
     <div class="sidebar-section-title">Tutorial</div>
     <a href="#overview" class="sidebar-link active">Overview</a>
     <a href="#what-is-booking-primitive" class="sidebar-link">What is it?</a>
+    <a href="#setup" class="sidebar-link">Setup</a>
     <a href="#llm-controller" class="sidebar-link">LLM controller</a>
     <a href="#core-observation" class="sidebar-link">Workflow pattern</a>
     <a href="#architecture" class="sidebar-link">Architecture</a>
@@ -329,6 +330,7 @@ td { padding: 8px 12px; border: 1px solid var(--border); vertical-align: top; }
     <a href="#session-model" class="sidebar-link">Session model</a>
     <a href="#browser-actuator" class="sidebar-link">Browser actuator</a>
     <a href="#implementation" class="sidebar-link">Implementation</a>
+    <a href="#running" class="sidebar-link">Running it</a>
     <a href="#walk-through" class="sidebar-link">Walk-through</a>
     <a href="#build-your-own" class="sidebar-link">Build your own</a>
   </div>
@@ -391,6 +393,101 @@ td { padding: 8px 12px; border: 1px solid var(--border); vertical-align: top; }
   <div class="callout note">
     <strong>Key idea</strong>
     The LLM manages the workflow, but it should not directly click random page elements. Use the LLM for language understanding, tool selection, field extraction, and decision routing. Use deterministic tools for API calls, selectors, field filling, and repeatable page transitions.
+  </div>
+
+  <h2 id="setup">Setup</h2>
+
+  <p>This tutorial builds a runnable server-side primitive. The primitive exposes HTTP endpoints, uses an LLM to choose tools and extract user fields, calls a flight-search tool, and uses Playwright to drive the booking page until payment or confirmation.</p>
+
+  <h3>1. Run the complete reference implementation</h3>
+
+  <p>If you are using this repository, start from the complete primitive implementation first. This verifies your LLM, flight-search key, browser runtime, and HTTP API before you edit anything.</p>
+
+  <div class="code-block">
+    <div class="code-block-header"><span class="lang">bash</span></div>
+    <pre><code>cd llm_primitives/kiwi_booking_primitive
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python -m playwright install chromium
+cp .env.example .env</code></pre>
+  </div>
+
+  <p>Edit <code>.env</code> and set <code>RAPIDAPI_KEY</code>. Then start the primitive:</p>
+
+  <div class="code-block">
+    <div class="code-block-header"><span class="lang">bash</span></div>
+    <pre><code>uvicorn server:app --host 0.0.0.0 --port 8010</code></pre>
+  </div>
+
+  <div class="callout note">
+    <strong>Reference first</strong>
+    The snippets below explain how to build the primitive from scratch. The repository implementation contains the full site-specific Playwright selectors and continuation logic; use it as the runnable reference when adapting the tutorial.
+  </div>
+
+  <h3>2. Create a new project from scratch</h3>
+
+  <div class="code-block">
+    <div class="code-block-header"><span class="lang">bash</span></div>
+    <pre><code>mkdir booking_primitive
+cd booking_primitive
+python -m venv .venv
+source .venv/bin/activate
+mkdir common screenshots</code></pre>
+  </div>
+
+  <p>On Windows PowerShell, activate the virtual environment with:</p>
+
+  <div class="code-block">
+    <div class="code-block-header"><span class="lang">powershell</span></div>
+    <pre><code>python -m venv .venv
+.\.venv\Scripts\Activate.ps1</code></pre>
+  </div>
+
+  <h3>3. Add dependencies</h3>
+
+  <div class="code-block">
+    <div class="code-block-header"><span class="lang">text</span><span class="filename">requirements.txt</span></div>
+    <pre><code>fastapi
+uvicorn[standard]
+python-dotenv
+pydantic
+requests
+playwright</code></pre>
+  </div>
+
+  <div class="code-block">
+    <div class="code-block-header"><span class="lang">bash</span></div>
+    <pre><code>pip install -r requirements.txt
+python -m playwright install chromium</code></pre>
+  </div>
+
+  <h3>4. Add environment variables</h3>
+
+  <div class="code-block">
+    <div class="code-block-header"><span class="lang">text</span><span class="filename">.env</span></div>
+    <pre><code>OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=qwen3:8b
+RAPIDAPI_KEY=your_rapidapi_key_here
+BOOKING_PRIMITIVE_PORT=8010</code></pre>
+  </div>
+
+  <p>The example uses Ollama for the local LLM and a RapidAPI Kiwi flight-search endpoint for inventory. The same primitive structure works with another LLM provider or another flight-search backend as long as the tool layer returns normalized booking options.</p>
+
+  <h3>5. Expected file layout</h3>
+
+  <div class="code-block">
+    <div class="code-block-header"><span class="lang">text</span></div>
+    <pre><code>booking_primitive/
+  .env
+  requirements.txt
+  server.py
+  kiwi_tools.py
+  browser_booking.py
+  common/
+    ollama_client.py
+    schemas.py
+  screenshots/</code></pre>
   </div>
 
   <h2 id="llm-controller">The LLM as workflow controller</h2>
@@ -685,56 +782,389 @@ td { padding: 8px 12px; border: 1px solid var(--border); vertical-align: top; }
 
   <h2 id="implementation">Implementation structure</h2>
 
-  <p>A clean booking primitive can be implemented with four files:</p>
+  <p>A runnable booking primitive needs five pieces. Build them in this order so each layer can be tested before the next one depends on it.</p>
 
   <table>
-    <tr><th>File</th><th>Responsibility</th></tr>
-    <tr><td><code>server.py</code></td><td>FastAPI endpoints, session registry, LLM calls, response schemas.</td></tr>
-    <tr><td><code>kiwi_tools.py</code></td><td>Flight search tools and RapidAPI parsing.</td></tr>
-    <tr><td><code>browser_booking.py</code></td><td>Playwright browser session, selectors, step detection, field filling.</td></tr>
-    <tr><td><code>common/ollama_client.py</code></td><td>LLM client that returns JSON from prompts.</td></tr>
+    <tr><th>File</th><th>Responsibility</th><th>Can test by</th></tr>
+    <tr><td><code>common/schemas.py</code></td><td>Request and response shapes shared by the frontend and primitive.</td><td>Importing the models.</td></tr>
+    <tr><td><code>common/ollama_client.py</code></td><td>Small LLM client that returns parsed JSON.</td><td>Calling <code>generate_json()</code>.</td></tr>
+    <tr><td><code>kiwi_tools.py</code></td><td>Deterministic search tools and normalized flight results.</td><td>Calling <code>search_oneway()</code>.</td></tr>
+    <tr><td><code>browser_booking.py</code></td><td>Playwright session: open page, detect step, fill fields, continue safely.</td><td>Opening one booking URL.</td></tr>
+    <tr><td><code>server.py</code></td><td>FastAPI primitive: LLM controller, session state, tool calls, browser runner.</td><td>Calling HTTP endpoints.</td></tr>
   </table>
 
-  <h3>Server skeleton</h3>
+  <h3>1. Define the public API schemas</h3>
 
   <div class="code-block">
-    <div class="code-block-header"><span class="lang">python</span><span class="filename">server.py</span></div>
-    <pre><code>app <span class="op">=</span> <span class="fn">FastAPI</span>(title<span class="op">=</span><span class="str">"KiwiBookingPrimitiveModel"</span>)
+    <div class="code-block-header"><span class="lang">python</span><span class="filename">common/schemas.py</span></div>
+    <pre><code>from typing import Any, Optional
+from pydantic import BaseModel, Field
 
-SESSIONS <span class="op">=</span> {}
-COLLECTED <span class="op">=</span> {}
+class InvokeRequest(BaseModel):
+    query: str
+    history: list[dict[str, str]] = Field(default_factory=list)
 
-<span class="dec">@app.post</span>(<span class="str">"/invoke"</span>)
-<span class="kw">def</span> <span class="fn">invoke</span>(req):
-    plan <span class="op">=</span> llm().generate_json(SEARCH_SYSTEM_PROMPT, req.query, req.history)
-    args <span class="op">=</span> normalize_search_args(plan[<span class="str">"tool"</span>], plan[<span class="str">"args"</span>])
-    result <span class="op">=</span> call_tool(plan[<span class="str">"tool"</span>], args)
-    <span class="kw">return</span> build_response(result)
+class InvokeResponse(BaseModel):
+    primitive: str
+    decision: str
+    extracted_args: dict[str, Any] = Field(default_factory=dict)
+    api_result: dict[str, Any] = Field(default_factory=dict)
+    answer: str
 
-<span class="dec">@app.post</span>(<span class="str">"/sessions/open"</span>)
-<span class="kw">def</span> <span class="fn">open_session</span>(req):
-    session_id <span class="op">=</span> new_id()
-    runner <span class="op">=</span> BookingSessionRunner(req.booking_url)
-    status <span class="op">=</span> runner.open()
-    SESSIONS[session_id] <span class="op">=</span> runner
-    COLLECTED[session_id] <span class="op">=</span> {}
-    <span class="kw">return</span> session_response(session_id, status)
+class OpenBookingRequest(BaseModel):
+    booking_url: str
+    headless: bool = True
 
-<span class="dec">@app.post</span>(<span class="str">"/sessions/{session_id}/message"</span>)
-<span class="kw">def</span> <span class="fn">session_message</span>(session_id, req):
-    collected <span class="op">=</span> COLLECTED[session_id]
-    patch <span class="op">=</span> llm().generate_json(PASSENGER_SYSTEM_PROMPT, req.message)
-    collected.update(clean_patch(patch))
-    status <span class="op">=</span> SESSIONS[session_id].run(
-        <span class="kw">lambda</span> s: s.apply_collected_fields(collected)
+class BookingMessageRequest(BaseModel):
+    message: str = ""
+
+class BookingSessionResponse(BaseModel):
+    primitive: str
+    session_id: str
+    status: dict[str, Any]
+    collected: dict[str, Any] = Field(default_factory=dict)
+    question: Optional[dict[str, Any]] = None
+    answer: str = ""</code></pre>
+  </div>
+
+  <h3>2. Build an LLM JSON client</h3>
+
+  <p>The primitive depends on structured LLM outputs. The client should strip markdown fences and recover the first JSON object if the model adds extra text.</p>
+
+  <div class="code-block">
+    <div class="code-block-header"><span class="lang">python</span><span class="filename">common/ollama_client.py</span></div>
+    <pre><code>import json, re, requests
+from typing import Any
+
+class OllamaClient:
+    def __init__(self, base_url="http://localhost:11434", model="qwen3:8b", timeout=120):
+        self.base_url = base_url.rstrip("/")
+        self.model = model
+        self.timeout = timeout
+
+    def generate_json(self, system_prompt: str, user_prompt: str, history=None) -&gt; dict[str, Any]:
+        messages = [{"role": "system", "content": system_prompt}]
+        if history:
+            messages.extend(history)
+        messages.append({"role": "user", "content": user_prompt})
+        r = requests.post(
+            f"{self.base_url}/api/chat",
+            json={"model": self.model, "messages": messages, "stream": False},
+            timeout=self.timeout,
+        )
+        r.raise_for_status()
+        raw = r.json()["message"]["content"].strip()
+        return self._parse_json(raw)
+
+    @staticmethod
+    def _parse_json(raw: str) -&gt; dict[str, Any]:
+        raw = raw.strip()
+        if raw.startswith("```"):
+            raw = raw.replace("```json", "```").split("```")[1].strip()
+        try:
+            return json.loads(raw)
+        except Exception:
+            match = re.search(r"\{.*\}", raw, flags=re.S)
+            if not match:
+                raise ValueError(f"LLM did not return JSON: {raw[:300]}")
+            return json.loads(match.group(0))</code></pre>
+  </div>
+
+  <h3>3. Implement deterministic tools</h3>
+
+  <p>The LLM chooses a tool, but the tool code owns validation, API calls, and result normalization. Every result should include enough stable fields for the frontend and the booking session.</p>
+
+  <div class="code-block">
+    <div class="code-block-header"><span class="lang">python</span><span class="filename">kiwi_tools.py</span></div>
+    <pre><code>import os, json, http.client
+from urllib.parse import urlencode
+
+RAPIDAPI_HOST = "kiwi-com-cheap-flights.p.rapidapi.com"
+KIWI_BASE = "https://www.kiwi.com"
+
+def _get(path: str) -&gt; dict:
+    key = os.getenv("RAPIDAPI_KEY", "")
+    if not key:
+        return {"error": "RAPIDAPI_KEY is not set"}
+    conn = http.client.HTTPSConnection(RAPIDAPI_HOST)
+    conn.request("GET", path, headers={
+        "x-rapidapi-key": key,
+        "x-rapidapi-host": RAPIDAPI_HOST,
+    })
+    raw = conn.getresponse().read().decode("utf-8")
+    conn.close()
+    return json.loads(raw)
+
+def _build_query(**kwargs) -&gt; str:
+    return urlencode({k: v for k, v in kwargs.items() if v not in (None, "")})
+
+def _parse_itineraries(raw: dict) -&gt; dict:
+    if "error" in raw:
+        return raw
+    flights = []
+    for idx, item in enumerate(raw.get("itineraries", [])[:10], 1):
+        booking_url = ""
+        try:
+            rel = item["bookingOptions"]["edges"][0]["node"]["bookingUrl"]
+            booking_url = KIWI_BASE + rel
+        except Exception:
+            pass
+        price = item.get("price", {}).get("amount", "N/A")
+        flights.append({
+            "option": idx,
+            "price_usd": price,
+            "provider": "Kiwi.com",
+            "booking_url": booking_url,
+            "raw": item,
+        })
+    return {"status": "ok" if flights else "no_results", "count": len(flights), "flights": flights}
+
+def search_oneway(origin: str, destination: str, date: str, adults: int = 1, currency: str = "usd") -&gt; dict:
+    import datetime
+    ts = int(datetime.datetime.strptime(date, "%Y-%m-%d").timestamp())
+    query = _build_query(
+        source=f"Airport:{origin.upper()}",
+        destination=f"Airport:{destination.upper()}",
+        outboundDepartDateFrom=ts,
+        outboundDepartDateTo=ts + 86399,
+        adults=adults,
+        currency=currency,
+        locale="en",
+        transportTypes="FLIGHT",
+        limit=10,
     )
-    status <span class="op">=</span> SESSIONS[session_id].run(<span class="kw">lambda</span> s: s.continue_if_possible())
-    <span class="kw">return</span> session_response(session_id, status)</code></pre>
+    return _parse_itineraries(_get(f"/one-way?{query}"))
+
+TOOL_REGISTRY = {"search_oneway": search_oneway}
+
+def call_tool(tool_name: str, args: dict) -&gt; dict:
+    if tool_name not in TOOL_REGISTRY:
+        return {"error": f"Unknown tool: {tool_name}"}
+    return TOOL_REGISTRY[tool_name](**args)</code></pre>
+  </div>
+
+  <h3>4. Implement the browser actuator contract</h3>
+
+  <p>The full selector implementation is site-specific, but the class contract should be stable. The server only needs these methods.</p>
+
+  <div class="code-block">
+    <div class="code-block-header"><span class="lang">python</span><span class="filename">browser_booking.py</span></div>
+    <pre><code>from playwright.sync_api import sync_playwright
+
+class BookingSession:
+    def __init__(self, booking_url: str, headless: bool = True):
+        self.booking_url = booking_url
+        self.headless = headless
+        self.pw = None
+        self.browser = None
+        self.page = None
+
+    def open(self) -&gt; dict:
+        self.pw = sync_playwright().start()
+        self.browser = self.pw.chromium.launch(headless=self.headless)
+        self.page = self.browser.new_page()
+        self.page.goto(self.booking_url, wait_until="domcontentloaded", timeout=60000)
+        return self.snapshot_status()
+
+    def snapshot_status(self) -&gt; dict:
+        text = self.page.locator("body").inner_text(timeout=5000).lower()
+        step = "unknown"
+        if "pay with" in text or "billing details" in text:
+            step = "payment"
+        elif "price has increased" in text:
+            step = "confirmation"
+        elif "passenger" in text:
+            step = "passengers"
+        return {"step": step, "url": self.page.url}
+
+    def next_question(self, collected: dict) -&gt; dict | None:
+        status = self.snapshot_status()
+        if status["step"] == "payment":
+            return None
+        required = [
+            ("given_name", "What is the passenger's given name as shown on the passport?"),
+            ("surname", "What is the passenger's surname as shown on the passport?"),
+            ("nationality", "What is the passenger's nationality?"),
+            ("dob_year", "What is the passenger's birth year?"),
+            ("email", "What contact email should be used for booking updates?"),
+            ("phone", "What contact phone number should be used?"),
+        ]
+        for field, question in required:
+            if not collected.get(field):
+                return {"field": field, "question": question, "status": status}
+        return {"field": None, "question": "", "status": status}
+
+    def apply_collected_fields(self, collected: dict) -&gt; dict:
+        # Fill page fields here with exact selectors and event dispatch.
+        # Example:
+        # self.page.locator('input[name="passengers.0.firstname"]').fill(collected["given_name"])
+        return self.snapshot_status()
+
+    def continue_if_possible(self) -&gt; dict:
+        # Click safe "continue" buttons, skip optional add-ons, and stop at payment/confirmation.
+        return self.snapshot_status()
+
+    def close(self):
+        if self.browser:
+            self.browser.close()
+        if self.pw:
+            self.pw.stop()</code></pre>
   </div>
 
   <div class="callout note">
     <strong>Threading detail</strong>
-    If you use Playwright's sync API inside FastAPI, run all Playwright operations for a session in a dedicated worker thread. This avoids the "Sync API inside asyncio loop" error and keeps each page bound to one execution thread.
+    If you use Playwright's sync API inside FastAPI, run all Playwright operations for each session in a dedicated worker thread. This avoids the "Sync API inside asyncio loop" error and keeps each page bound to one execution thread.
+  </div>
+
+  <h3>5. Wire the primitive server</h3>
+
+  <p>The server is the primitive boundary. It owns the LLM controller prompts, tool calls, session registry, collected fields, and HTTP responses.</p>
+
+  <div class="code-block">
+    <div class="code-block-header"><span class="lang">python</span><span class="filename">server.py</span></div>
+    <pre><code>import os, re, uuid
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Callable, TypeVar
+from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException
+
+from common.ollama_client import OllamaClient
+from common.schemas import InvokeRequest, InvokeResponse, OpenBookingRequest, BookingMessageRequest, BookingSessionResponse
+from kiwi_tools import call_tool
+from browser_booking import BookingSession
+
+load_dotenv()
+PRIMITIVE_NAME = "BookingPrimitiveModel"
+app = FastAPI(title=PRIMITIVE_NAME)
+T = TypeVar("T")
+
+SEARCH_SYSTEM_PROMPT = """
+You are BookingPrimitiveModel. Choose exactly one action.
+Available tool: search_oneway(origin, destination, date, adults, currency).
+Use IATA airport codes and YYYY-MM-DD dates.
+If required information is missing, ask a short follow-up question.
+Return JSON only:
+{"decision":"ask_user|use_tool","tool":"search_oneway|","question":"","args":{}}
+""".strip()
+
+PASSENGER_SYSTEM_PROMPT = """
+Extract passenger fields explicitly provided by the user.
+Fields: given_name, surname, nationality, gender, dob_day, dob_month, dob_year, email, phone.
+Return JSON only: {"passenger_patch":{}}
+""".strip()
+
+def llm() -&gt; OllamaClient:
+    return OllamaClient(os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"), os.getenv("OLLAMA_MODEL", "qwen3:8b"))
+
+class BookingSessionRunner:
+    def __init__(self, booking_url: str, headless: bool):
+        self.booking_url = booking_url
+        self.headless = headless
+        self.session = None
+        self.executor = ThreadPoolExecutor(max_workers=1)
+
+    def open(self) -&gt; dict[str, Any]:
+        def _open():
+            self.session = BookingSession(self.booking_url, self.headless)
+            return self.session.open()
+        return self.executor.submit(_open).result()
+
+    def run(self, fn: Callable[[BookingSession], T]) -&gt; T:
+        return self.executor.submit(lambda: fn(self.session)).result()
+
+SESSIONS: dict[str, BookingSessionRunner] = {}
+COLLECTED: dict[str, dict[str, Any]] = {}
+
+@app.post("/invoke", response_model=InvokeResponse)
+def invoke(req: InvokeRequest):
+    plan = llm().generate_json(SEARCH_SYSTEM_PROMPT, req.query, req.history)
+    if plan["decision"] == "ask_user":
+        return InvokeResponse(primitive=PRIMITIVE_NAME, decision="ask_user", answer=plan["question"])
+    result = call_tool(plan["tool"], plan["args"])
+    return InvokeResponse(
+        primitive=PRIMITIVE_NAME,
+        decision="use_tool",
+        extracted_args={"tool": plan["tool"], **plan["args"]},
+        api_result=result,
+        answer=f"Found {result.get('count', 0)} option(s). Choose one to start booking.",
+    )
+
+@app.post("/sessions/open", response_model=BookingSessionResponse)
+def open_session(req: OpenBookingRequest):
+    sid = uuid.uuid4().hex[:12]
+    runner = BookingSessionRunner(req.booking_url, req.headless)
+    status = runner.open()
+    SESSIONS[sid] = runner
+    COLLECTED[sid] = {}
+    q = runner.run(lambda s: s.next_question(COLLECTED[sid]))
+    return BookingSessionResponse(primitive=PRIMITIVE_NAME, session_id=sid, status=status, collected={}, question=q, answer=(q or {}).get("question", "Booking page opened."))
+
+@app.post("/sessions/{session_id}/message", response_model=BookingSessionResponse)
+def session_message(session_id: str, req: BookingMessageRequest):
+    if session_id not in SESSIONS:
+        raise HTTPException(status_code=404, detail="Unknown session_id")
+    collected = COLLECTED[session_id]
+    patch = llm().generate_json(PASSENGER_SYSTEM_PROMPT, req.message).get("passenger_patch", {})
+    for k, v in patch.items():
+        if v:
+            collected[k] = str(v).strip()
+    runner = SESSIONS[session_id]
+    q = runner.run(lambda s: s.next_question(collected))
+    status = runner.run(lambda s: s.apply_collected_fields(collected)) if q is None or q.get("field") is None else q["status"]
+    if q is None or q.get("field") is None:
+        status = runner.run(lambda s: s.continue_if_possible())
+        q = runner.run(lambda s: s.next_question(collected))
+    answer = (q or {}).get("question") or "Reached payment or the next manual confirmation step."
+    return BookingSessionResponse(primitive=PRIMITIVE_NAME, session_id=session_id, status=status, collected=collected, question=q, answer=answer)</code></pre>
+  </div>
+
+  <h2 id="running">Running it</h2>
+
+  <h3>Start the LLM</h3>
+
+  <div class="code-block">
+    <div class="code-block-header"><span class="lang">bash</span></div>
+    <pre><code>ollama pull qwen3:8b
+ollama serve</code></pre>
+  </div>
+
+  <h3>Start the primitive</h3>
+
+  <div class="code-block">
+    <div class="code-block-header"><span class="lang">bash</span></div>
+    <pre><code>uvicorn server:app --host 0.0.0.0 --port 8010</code></pre>
+  </div>
+
+  <h3>Test search</h3>
+
+  <div class="code-block">
+    <div class="code-block-header"><span class="lang">bash</span></div>
+    <pre><code>curl -X POST http://localhost:8010/invoke \
+  -H "Content-Type: application/json" \
+  -d '{"query":"Find a one-way flight from SEA to JFK on 2026-06-15 for 1 adult"}'</code></pre>
+  </div>
+
+  <h3>Open a booking session</h3>
+
+  <div class="code-block">
+    <div class="code-block-header"><span class="lang">bash</span></div>
+    <pre><code>curl -X POST http://localhost:8010/sessions/open \
+  -H "Content-Type: application/json" \
+  -d '{"booking_url":"PASTE_BOOKING_URL_FROM_SEARCH_RESULT","headless":false}'</code></pre>
+  </div>
+
+  <h3>Send passenger information</h3>
+
+  <div class="code-block">
+    <div class="code-block-header"><span class="lang">bash</span></div>
+    <pre><code>curl -X POST http://localhost:8010/sessions/SESSION_ID/message \
+  -H "Content-Type: application/json" \
+  -d '{"message":"The passenger is Haibo Jin, Chinese, male, born on 1997-10-09. Email haibo@example.com and phone +1 2175185414."}'</code></pre>
+  </div>
+
+  <div class="callout tip">
+    <strong>Expected result</strong>
+    The primitive should collect the passenger fields, fill what it can on the booking page, continue through safe steps, and stop at payment or a confirmation question. If it asks for one missing field, the user should be able to reply with only the value.
   </div>
 
   <h2 id="walk-through">Walk-through</h2>
