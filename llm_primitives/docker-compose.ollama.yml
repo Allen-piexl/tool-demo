@@ -1,0 +1,29 @@
+services:
+  stock-ollama:
+    image: ollama/ollama:latest
+    container_name: stock-ollama
+    ports:
+      - "11431:11434"
+    volumes:
+      - stock_ollama:/root/.ollama
+
+  news-ollama:
+    image: ollama/ollama:latest
+    container_name: news-ollama
+    ports:
+      - "11432:11434"
+    volumes:
+      - news_ollama:/root/.ollama
+
+  amazon-ollama:
+    image: ollama/ollama:latest
+    container_name: amazon-ollama
+    ports:
+      - "11433:11434"
+    volumes:
+      - amazon_ollama:/root/.ollama
+
+volumes:
+  stock_ollama:
+  news_ollama:
+  amazon_ollama:
