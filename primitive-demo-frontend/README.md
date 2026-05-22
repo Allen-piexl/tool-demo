@@ -1,4 +1,5 @@
-# PrimitiveOS Demo v7
+# PrimitiveOS Demo
+
 
 This version includes three pages:
 
