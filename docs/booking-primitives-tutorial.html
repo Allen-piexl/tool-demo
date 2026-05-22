@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Building Booking Primitives - Tutorial</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; }
+
+:root {
+  --sidebar-w: 260px;
+  --content-max: 840px;
+  --bg: #ffffff;
+  --bg-page: #f8f9fb;
+  --text: #1a1a1a;
+  --text-muted: #555;
+  --text-faint: #888;
+  --border: #dde1e7;
+  --accent: #ee4c2c;
+  --accent-bg: #fff5f3;
+  --code-bg: #1e1e2e;
+  --code-text: #cdd6f4;
+  --note-bg: #f0f7ff;
+  --note-border: #3b82f6;
+  --warn-bg: #fffbea;
+  --warn-border: #f59e0b;
+  --tip-bg: #f0fdf4;
+  --tip-border: #22c55e;
+  --sidebar-bg: #f8f9fb;
+  --tag-bg: #e8f4f8;
+  --tag-text: #1a6b8a;
+}
+
+body {
+  font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+  background: var(--bg-page);
+  color: var(--text);
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+
+.layout { display: flex; min-height: 100vh; }
+
+nav.sidebar {
+  width: var(--sidebar-w);
+  flex-shrink: 0;
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  padding: 1.5rem 0 2rem;
+}
+.sidebar-logo {
+  padding: 0 1.25rem 1rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1rem;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sidebar-logo .dot {
+  width: 10px;
+  height: 10px;
+  background: var(--accent);
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.sidebar-section-title {
+  padding: 0.3rem 1.25rem;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+  font-weight: 600;
+  margin-top: 1rem;
+}
+.sidebar-link {
+  display: block;
+  padding: 0.3rem 1.25rem;
+  font-size: 13.5px;
+  color: var(--text-muted);
+  text-decoration: none;
+  border-left: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+}
+.sidebar-link:hover { color: var(--text); border-left-color: var(--border); }
+.sidebar-link.active {
+  color: var(--accent);
+  border-left-color: var(--accent);
+  font-weight: 500;
+  background: var(--accent-bg);
+}
+
+main {
+  flex: 1;
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 3rem 3rem 6rem;
+  background: var(--bg);
+  min-height: 100vh;
+}
+
+.breadcrumb {
+  font-size: 13px;
+  color: var(--text-faint);
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.breadcrumb a { color: var(--text-muted); text-decoration: none; }
+.breadcrumb a:hover { color: var(--accent); }
+.breadcrumb span { color: var(--border); }
+
+.page-title {
+  font-size: 32px;
+  font-weight: 700;
+  margin: 0 0 0.5rem;
+  line-height: 1.2;
+}
+.page-meta { font-size: 13px; color: var(--text-faint); margin: 0 0 2rem; }
+.page-meta a { color: var(--accent); text-decoration: none; }
+
+h2 {
+  font-size: 22px;
+  font-weight: 600;
+  margin: 2.5rem 0 0.75rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+  color: var(--text);
+}
+h3 { font-size: 17px; font-weight: 600; margin: 2rem 0 0.5rem; }
+h4 { font-size: 15px; font-weight: 600; margin: 1.5rem 0 0.4rem; }
+p { margin: 0 0 1rem; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+ul, ol { margin: 0 0 1rem; padding-left: 1.75rem; }
+li { margin-bottom: 0.4rem; }
+
+code {
+  font-family: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+  font-size: 13px;
+  background: #f0f1f3;
+  color: #c0392b;
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid #e0e2e6;
+}
+
+.code-block {
+  position: relative;
+  margin: 1rem 0 1.5rem;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #2a2a3e;
+}
+.code-block-header {
+  background: #2a2a3e;
+  padding: 6px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #888;
+  font-family: ui-monospace, monospace;
+}
+.code-block-header .lang { color: #7c7faf; }
+.code-block-header .filename { color: #aaa; }
+pre {
+  background: var(--code-bg);
+  color: var(--code-text);
+  margin: 0;
+  padding: 1.1rem 1.25rem;
+  overflow-x: auto;
+  font-family: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+  font-size: 13px;
+  line-height: 1.65;
+}
+pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  border: none;
+  font-size: inherit;
+}
+
+.kw { color: #cba6f7; }
+.fn { color: #89b4fa; }
+.cls { color: #f9e2af; }
+.str { color: #a6e3a1; }
+.cmt { color: #6c7086; font-style: italic; }
+.num { color: #fab387; }
+
+.callout {
+  padding: 1rem 1.1rem;
+  border-radius: 6px;
+  margin: 1.25rem 0;
+  font-size: 15px;
+  line-height: 1.6;
+  border-left: 4px solid;
+}
+.callout strong {
+  display: block;
+  margin-bottom: 0.3rem;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.callout.note { background: var(--note-bg); border-color: var(--note-border); }
+.callout.note strong { color: var(--note-border); }
+.callout.warn { background: var(--warn-bg); border-color: var(--warn-border); }
+.callout.warn strong { color: #92620a; }
+.callout.tip { background: var(--tip-bg); border-color: var(--tip-border); }
+.callout.tip strong { color: #166534; }
+
+.learn-box {
+  background: var(--note-bg);
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin: 0 0 2rem;
+}
+.learn-box h4 {
+  margin: 0 0 0.5rem;
+  font-size: 14px;
+  color: #1d4ed8;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.learn-box ul { margin: 0; }
+.learn-box li { font-size: 14.5px; color: #1e3a5f; }
+
+.tags { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 1.5rem; }
+.tag {
+  background: var(--tag-bg);
+  color: var(--tag-text);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0 1.5rem;
+  font-size: 14.5px;
+}
+th {
+  background: #f4f5f7;
+  text-align: left;
+  padding: 8px 12px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-weight: 600;
+}
+td { padding: 8px 12px; border: 1px solid var(--border); vertical-align: top; }
+
+.arch-fig {
+  margin: 1.5rem 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+.arch-fig svg { display: block; width: 100%; height: auto; }
+.arch-fig figcaption {
+  padding: 0.5rem 1rem;
+  background: #f8f9fb;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text-faint);
+  font-style: italic;
+  text-align: center;
+}
+
+.steps { counter-reset: step; list-style: none; padding-left: 0; }
+.steps li {
+  counter-increment: step;
+  padding-left: 2.5rem;
+  position: relative;
+  margin-bottom: 1rem;
+}
+.steps li::before {
+  content: counter(step);
+  position: absolute;
+  left: 0;
+  top: 2px;
+  width: 22px;
+  height: 22px;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (max-width: 800px) {
+  nav.sidebar { display: none; }
+  main { padding: 2rem 1.25rem 4rem; }
+  .page-title { font-size: 26px; }
+}
+</style>
+</head>
+<body>
+<div class="layout">
+
+<nav class="sidebar">
+  <div class="sidebar-logo"><span class="dot"></span>Booking Primitives</div>
+  <div class="sidebar-section">
+    <div class="sidebar-section-title">Tutorial</div>
+    <a href="#overview" class="sidebar-link active">Overview</a>
+    <a href="#what-is-booking-primitive" class="sidebar-link">What is it?</a>
+    <a href="#core-observation" class="sidebar-link">Core observation</a>
+    <a href="#architecture" class="sidebar-link">Architecture</a>
+    <a href="#llm-contract" class="sidebar-link">LLM contract</a>
+    <a href="#session-model" class="sidebar-link">Session model</a>
+    <a href="#browser-actuator" class="sidebar-link">Browser actuator</a>
+    <a href="#implementation" class="sidebar-link">Implementation</a>
+    <a href="#walk-through" class="sidebar-link">Walk-through</a>
+    <a href="#build-your-own" class="sidebar-link">Build your own</a>
+  </div>
+  <div class="sidebar-section">
+    <div class="sidebar-section-title">Reference</div>
+    <a href="#design-principles" class="sidebar-link">Design principles</a>
+    <a href="#checklist" class="sidebar-link">Checklist</a>
+  </div>
+</nav>
+
+<main>
+  <div class="breadcrumb">
+    <a href="#">Docs</a><span>/</span>
+    <a href="#">Tutorials</a><span>/</span>
+    Building Booking Primitives
+  </div>
+
+  <h1 id="overview" class="page-title">Building Booking Primitives</h1>
+  <p class="page-meta">Tutorial &mdash; LLM-backed browser workflow primitive</p>
+
+  <div class="tags">
+    <span class="tag">LLM primitive</span>
+    <span class="tag">tool use</span>
+    <span class="tag">browser automation</span>
+    <span class="tag">workflow state</span>
+    <span class="tag">intermediate</span>
+  </div>
+
+  <div class="learn-box">
+    <h4>What you will learn</h4>
+    <ul>
+      <li>How a booking primitive differs from a simple API primitive like stock lookup</li>
+      <li>How to split the primitive into LLM planning, API search, session state, and browser execution</li>
+      <li>How to let the LLM handle user language while deterministic code handles fragile checkout pages</li>
+      <li>How to ask the user only when the workflow reaches a real confirmation or missing field</li>
+      <li>How to design your own booking-style primitive for another website</li>
+    </ul>
+  </div>
+
+  <h2 id="what-is-booking-primitive">What is a Booking Primitive?</h2>
+
+  <p>A booking primitive is an LLM-backed tool primitive that does more than call one API. It converts a natural-language travel request into structured flight search arguments, calls a flight search backend, opens a live checkout session, collects missing passenger information, and drives the checkout page until it reaches payment or a user decision point.</p>
+
+  <p>It still has the same basic shape as a simple primitive:</p>
+
+  <div class="code-block">
+    <div class="code-block-header"><span class="lang">text</span></div>
+    <pre><code>User message
+  -> LLM extracts structured intent
+  -> Tool/API call
+  -> Structured result
+  -> Natural-language answer</code></pre>
+  </div>
+
+  <p>The difference is that booking is a <strong>stateful workflow</strong>. Searching flights is one turn. Completing checkout takes many turns, and each turn depends on the live browser state.</p>
+
+  <div class="callout note">
+    <strong>Key idea</strong>
+    A booking primitive should not make the LLM click random page elements. Use the LLM for language understanding and decision normalization. Use deterministic browser code for selectors, field filling, and repeatable page transitions.
+  </div>
+
+  <h2 id="core-observation">The core observation</h2>
+
+  <p>Most booking flows share the same computational pattern even when the website changes:</p>
+
+  <table>
+    <tr>
+      <th>Stage</th>
+      <th>What happens</th>
+      <th>Who should handle it?</th>
+    </tr>
+    <tr>
+      <td>Intent extraction</td>
+      <td>User says where, when, how many passengers, and whether it is one-way or round-trip.</td>
+      <td>LLM</td>
+    </tr>
+    <tr>
+      <td>Inventory lookup</td>
+      <td>Search API returns available options and booking URLs.</td>
+      <td>API tool</td>
+    </tr>
+    <tr>
+      <td>Checkout opening</td>
+      <td>Browser opens the selected booking URL and detects the current step.</td>
+      <td>Browser actuator</td>
+    </tr>
+    <tr>
+      <td>Information collection</td>
+      <td>User provides names, nationality, DOB, email, phone, and other required fields.</td>
+      <td>LLM plus session state</td>
+    </tr>
+    <tr>
+      <td>Form execution</td>
+      <td>Fields are filled, add-ons are skipped, and the page advances.</td>
+      <td>Deterministic Playwright code</td>
+    </tr>
+    <tr>
+      <td>User confirmation</td>
+      <td>Price increases, payment, or ambiguous choices require explicit user approval.</td>
+      <td>User</td>
+    </tr>
+  </table>
+
+  <p>The primitive is useful because it packages this pattern behind a clean interface. The frontend does not need to know how Kiwi's passenger page works. It only sends messages to the primitive and receives a structured session response.</p>
+
+  <h2 id="architecture">Architecture</h2>
+
+  <figure class="arch-fig">
+    <svg viewBox="0 0 760 330" role="img" aria-label="Booking primitive architecture">
+      <defs>
+        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </marker>
+      </defs>
+
+      <rect x="45" y="42" width="670" height="230" rx="10" fill="none" stroke="#ee4c2c" stroke-width="1.5" stroke-dasharray="6 3"/>
+      <text x="62" y="62" font-size="12" fill="#ee4c2c" font-weight="600" font-family="system-ui">KiwiBookingPrimitiveModel</text>
+
+      <rect x="80" y="95" width="145" height="62" rx="6" fill="#f0f7ff" stroke="#3b82f6"/>
+      <text x="152" y="122" text-anchor="middle" font-size="13" font-weight="600" fill="#1e3a5f" font-family="system-ui">LLM Planner</text>
+      <text x="152" y="139" text-anchor="middle" font-size="10" fill="#3b82f6" font-family="system-ui">query -> tool args</text>
+
+      <rect x="305" y="95" width="145" height="62" rx="6" fill="#f0fdf4" stroke="#22c55e"/>
+      <text x="377" y="122" text-anchor="middle" font-size="13" font-weight="600" fill="#166534" font-family="system-ui">Flight API Tool</text>
+      <text x="377" y="139" text-anchor="middle" font-size="10" fill="#16a34a" font-family="system-ui">search_oneway / roundtrip</text>
+
+      <rect x="530" y="95" width="145" height="62" rx="6" fill="#fffbea" stroke="#f59e0b"/>
+      <text x="602" y="122" text-anchor="middle" font-size="13" font-weight="600" fill="#92620a" font-family="system-ui">Flight Options</text>
+      <text x="602" y="139" text-anchor="middle" font-size="10" fill="#b45309" font-family="system-ui">price + booking URL</text>
+
+      <rect x="80" y="192" width="145" height="62" rx="6" fill="#fef3f2" stroke="#ef4444"/>
+      <text x="152" y="219" text-anchor="middle" font-size="13" font-weight="600" fill="#7f1d1d" font-family="system-ui">Session Store</text>
+      <text x="152" y="236" text-anchor="middle" font-size="10" fill="#ef4444" font-family="system-ui">collected fields</text>
+
+      <rect x="305" y="192" width="145" height="62" rx="6" fill="#f0f7ff" stroke="#3b82f6"/>
+      <text x="377" y="219" text-anchor="middle" font-size="13" font-weight="600" fill="#1e3a5f" font-family="system-ui">LLM Extractor</text>
+      <text x="377" y="236" text-anchor="middle" font-size="10" fill="#3b82f6" font-family="system-ui">message -> field patch</text>
+
+      <rect x="530" y="192" width="145" height="62" rx="6" fill="#f4f5f7" stroke="#6b7280"/>
+      <text x="602" y="219" text-anchor="middle" font-size="13" font-weight="600" fill="#374151" font-family="system-ui">Browser Actuator</text>
+      <text x="602" y="236" text-anchor="middle" font-size="10" fill="#6b7280" font-family="system-ui">Playwright checkout</text>
+
+      <line x1="225" y1="126" x2="305" y2="126" stroke="#888" stroke-width="1.5" marker-end="url(#arr)"/>
+      <line x1="450" y1="126" x2="530" y2="126" stroke="#888" stroke-width="1.5" marker-end="url(#arr)"/>
+      <line x1="602" y1="157" x2="602" y2="192" stroke="#888" stroke-width="1.5" marker-end="url(#arr)"/>
+      <line x1="225" y1="223" x2="305" y2="223" stroke="#888" stroke-width="1.5" marker-end="url(#arr)"/>
+      <line x1="450" y1="223" x2="530" y2="223" stroke="#888" stroke-width="1.5" marker-end="url(#arr)"/>
+      <line x1="530" y1="238" x2="225" y2="238" stroke="#888" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#arr)"/>
+
+      <text x="380" y="300" text-anchor="middle" font-size="12" fill="#888" font-family="system-ui">The LLM manages language and structured decisions; deterministic code manages browser state and page actions.</text>
+    </svg>
+    <figcaption>Fig 1. The booking primitive combines LLM planning, API search, stateful user data extraction, and browser execution.</figcaption>
+  </figure>
+
+  <h2 id="llm-contract">The LLM contract</h2>
+
+  <p>The primitive uses two separate LLM prompts. Keeping them separate makes the workflow easier to debug.</p>
+
+  <h3>1. Search planner</h3>
+  <p>The search planner converts a user travel request into a tool decision.</p>
+
+  <div class="code-block">
+    <div class="code-block-header"><span class="lang">json</span><span class="filename">planner output</span></div>
+    <pre><code>{
+  "decision": "use_tool",
+  "tool": "search_oneway",
+  "question": "",
+  "answer": "",
+  "args": {
+    "origin": "SEA",
+    "destination": "JFK",
+    "date": "2026-06-12",
+    "adults": 1,
+    "cabin_class": "ECONOMY",
+    "currency": "usd"
+  }
+}</code></pre>
+  </div>
+
+  <p>The planner can also return <code>ask_user</code> when the origin, destination, date, or trip type is missing. This keeps incomplete searches out of the tool layer.</p>
+
+  <h3>2. Passenger extractor</h3>
+  <p>After a booking session is open, the user may answer one field at a time or provide a whole sentence. The passenger extractor turns that message into a patch.</p>
+
+  <div class="code-block">
+    <div class="code-block-header"><span class="lang">json</span><span class="filename">passenger patch</span></div>
+    <pre><code>{
+  "passenger_patch": {
+    "given_name": "Alex",
+    "surname": "Chen",
+    "nationality": "CN",
+    "gender": "male",
+    "dob_day": "09",
+    "dob_month": "10",
+    "dob_year": "1997",
+    "email": "alex@example.com",
+    "phone": "+1 5550101234"
+  }
+}</code></pre>
+  </div>
+
+  <div class="callout tip">
+    <strong>One-value replies</strong>
+    If the primitive asks "What is the passenger's surname?" and the user replies only "Jin", the session state should assign that value to the current field directly. Do not force users to write structured JSON.
+  </div>
+
+  <h2 id="session-model">Session model</h2>
+
+  <p>A booking session stores two things:</p>
+  <ul>
+    <li><strong>Collected user data:</strong> fields such as name, nationality, DOB, email, and phone.</li>
+    <li><strong>Live browser state:</strong> the Playwright page opened at the selected booking URL.</li>
+  </ul>
+
+  <p>The public session API is intentionally small:</p>
+
+  <table>
+    <tr><th>Endpoint</th><th>Purpose</th></tr>
+    <tr><td><code>POST /invoke</code></td><td>Search flights from natural language.</td></tr>
+    <tr><td><code>POST /sessions/open</code></td><td>Open a selected booking URL and create a browser session.</td></tr>
+    <tr><td><code>POST /sessions/{id}/message</code></td><td>Process a user reply, update collected fields, and advance the booking flow.</td></tr>
+    <tr><td><code>POST /sessions/{id}/continue</code></td><td>Try to continue from the current browser step.</td></tr>
+    <tr><td><code>DELETE /sessions/{id}</code></td><td>Close the browser and clear session memory.</td></tr>
+  </table>
+
+  <div class="callout warn">
+    <strong>Do not trust frontend state</strong>
+    The backend session should be the source of truth for collected fields. The frontend may display fields, but it should not overwrite backend session state with stale data.
+  </div>
+
+  <h2 id="browser-actuator">Browser actuator</h2>
+
+  <p>The browser actuator is the deterministic part of the primitive. It is responsible for opening the page, detecting the current step, filling fields, clicking predictable buttons, and stopping at real decision points.</p>
+
+  <h3>Step detection</h3>
+  <p>Do not rely only on page text. Use a combination of DOM selectors and text markers.</p>
+
+  <div class="code-block">
+    <div class="code-block-header"><span class="lang">python</span><span class="filename">step detection sketch</span></div>
+    <pre><code><span class="kw">def</span> <span class="fn">detect_step</span>(page):
+    text <span class="op">=</span> <span class="fn">read_page</span>(page).lower()
+
+    <span class="kw">if</span> <span class="str">"price has increased"</span> <span class="kw">in</span> text:
+        <span class="kw">return</span> <span class="str">"confirmation"</span>
+
+    <span class="kw">if</span> <span class="str">"pay with"</span> <span class="kw">in</span> text <span class="kw">or</span> <span class="str">"billing details"</span> <span class="kw">in</span> text:
+        <span class="kw">return</span> <span class="str">"payment"</span>
+
+    <span class="kw">if</span> <span class="fn">passenger_form_present</span>(page):
+        <span class="kw">return</span> <span class="str">"passengers"</span>
+
+    <span class="kw">if</span> <span class="str">"continue with saver"</span> <span class="kw">in</span> text:
+        <span class="kw">return</span> <span class="str">"fare"</span>
+
+    <span class="kw">return</span> <span class="str">"unknown"</span></code></pre>
+  </div>
+
+  <h3>Filling fields</h3>
+  <p>For important fields, use exact selectors first and fallback selectors second. After filling, dispatch input/change/blur events so React-controlled fields notice the value.</p>
+
+  <div class="code-block">
+    <div class="code-block-header"><span class="lang">python</span><span class="filename">field fill sketch</span></div>
+    <pre><code><span class="kw">def</span> <span class="fn">fill_given_name</span>(page, value):
+    loc <span class="op">=</span> page.locator(<span class="str">'input[name="passengers.0.firstname"]'</span>).first
+    loc.scroll_into_view_if_needed()
+    loc.click()
+    loc.fill(value)
+    loc.evaluate(<span class="str">"""
+      (el) => {
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        el.dispatchEvent(new Event('blur', { bubbles: true }));
+      }
+    """</span>)</code></pre>
+  </div>
+
+  <h3>Phone numbers</h3>
+  <p>Phone numbers often have two UI controls: country code and national number. Preserve the user's country code, then split it before filling the page.</p>
+
+  <div class="code-block">
+    <div class="code-block-header"><span class="lang">python</span></div>
+    <pre><code><span class="kw">def</span> <span class="fn">split_phone</span>(value):
+    <span class="cmt"># "+1 5550101234" -> ("+1", "5550101234")</span>
+    match <span class="op">=</span> re.match(<span class="str">r"^\s*(\+\d{1,3})[\s\-().]*(.*)$"</span>, value)
+    <span class="kw">if</span> <span class="kw">not</span> match:
+        <span class="kw">return</span> None, re.sub(<span class="str">r"\D+"</span>, <span class="str">""</span>, value)
+    <span class="kw">return</span> match.group(<span class="num">1</span>), re.sub(<span class="str">r"\D+"</span>, <span class="str">""</span>, match.group(<span class="num">2</span>))</code></pre>
+  </div>
+
+  <h3>Decision points</h3>
+  <p>The actuator should not silently accept every page. Price increases, payment selection, and any expensive add-on should stop and ask the user.</p>
+
+  <div class="callout warn">
+    <strong>Human confirmation</strong>
+    If Kiwi says the price increased from one amount to another, the primitive should ask: "Reply continue to accept the new price, or back to search again." This is not a place for autonomous guessing.
+  </div>
+
+  <h2 id="implementation">Implementation structure</h2>
+
+  <p>A clean booking primitive can be implemented with four files:</p>
+
+  <table>
+    <tr><th>File</th><th>Responsibility</th></tr>
+    <tr><td><code>server.py</code></td><td>FastAPI endpoints, session registry, LLM calls, response schemas.</td></tr>
+    <tr><td><code>kiwi_tools.py</code></td><td>Flight search tools and RapidAPI parsing.</td></tr>
+    <tr><td><code>browser_booking.py</code></td><td>Playwright browser session, selectors, step detection, field filling.</td></tr>
+    <tr><td><code>common/ollama_client.py</code></td><td>LLM client that returns JSON from prompts.</td></tr>
+  </table>
+
+  <h3>Server skeleton</h3>
+
+  <div class="code-block">
+    <div class="code-block-header"><span class="lang">python</span><span class="filename">server.py</span></div>
+    <pre><code>app <span class="op">=</span> <span class="fn">FastAPI</span>(title<span class="op">=</span><span class="str">"KiwiBookingPrimitiveModel"</span>)
+
+SESSIONS <span class="op">=</span> {}
+COLLECTED <span class="op">=</span> {}
+
+<span class="dec">@app.post</span>(<span class="str">"/invoke"</span>)
+<span class="kw">def</span> <span class="fn">invoke</span>(req):
+    plan <span class="op">=</span> llm().generate_json(SEARCH_SYSTEM_PROMPT, req.query, req.history)
+    args <span class="op">=</span> normalize_search_args(plan[<span class="str">"tool"</span>], plan[<span class="str">"args"</span>])
+    result <span class="op">=</span> call_tool(plan[<span class="str">"tool"</span>], args)
+    <span class="kw">return</span> build_response(result)
+
+<span class="dec">@app.post</span>(<span class="str">"/sessions/open"</span>)
+<span class="kw">def</span> <span class="fn">open_session</span>(req):
+    session_id <span class="op">=</span> new_id()
+    runner <span class="op">=</span> BookingSessionRunner(req.booking_url)
+    status <span class="op">=</span> runner.open()
+    SESSIONS[session_id] <span class="op">=</span> runner
+    COLLECTED[session_id] <span class="op">=</span> {}
+    <span class="kw">return</span> session_response(session_id, status)
+
+<span class="dec">@app.post</span>(<span class="str">"/sessions/{session_id}/message"</span>)
+<span class="kw">def</span> <span class="fn">session_message</span>(session_id, req):
+    collected <span class="op">=</span> COLLECTED[session_id]
+    patch <span class="op">=</span> llm().generate_json(PASSENGER_SYSTEM_PROMPT, req.message)
+    collected.update(clean_patch(patch))
+    status <span class="op">=</span> SESSIONS[session_id].run(
+        <span class="kw">lambda</span> s: s.apply_collected_fields(collected)
+    )
+    status <span class="op">=</span> SESSIONS[session_id].run(<span class="kw">lambda</span> s: s.continue_if_possible())
+    <span class="kw">return</span> session_response(session_id, status)</code></pre>
+  </div>
+
+  <div class="callout note">
+    <strong>Threading detail</strong>
+    If you use Playwright's sync API inside FastAPI, run all Playwright operations for a session in a dedicated worker thread. This avoids the "Sync API inside asyncio loop" error and keeps each page bound to one execution thread.
+  </div>
+
+  <h2 id="walk-through">Walk-through</h2>
+
+  <ol class="steps">
+    <li>
+      <strong>User searches for a flight.</strong>
+      The frontend sends the user's text to <code>/invoke</code>. The LLM planner selects <code>search_oneway</code> or <code>search_roundtrip</code> and returns structured arguments.
+    </li>
+    <li>
+      <strong>The primitive returns flight options.</strong>
+      The flight API parser normalizes price, stops, baggage, legs, and booking URL. The frontend renders each option with a "Book this option" action.
+    </li>
+    <li>
+      <strong>User selects an option.</strong>
+      The frontend calls <code>/sessions/open</code> with the selected booking URL. The backend opens the browser and detects the first checkout step.
+    </li>
+    <li>
+      <strong>The primitive asks for missing information.</strong>
+      If passenger name, nationality, DOB, email, or phone is missing, the session asks one direct question. The user can answer with a short value or a full sentence.
+    </li>
+    <li>
+      <strong>The browser actuator fills the checkout page.</strong>
+      Once required fields are collected, Playwright fills the page, selects no checked baggage, selects no insurance, advances fare and seat steps, and stops at payment or confirmation.
+    </li>
+    <li>
+      <strong>The primitive stops at payment.</strong>
+      Payment is a manual step. The primitive should not enter credit card details or click final purchase buttons unless the product explicitly supports that and the user has confirmed.
+    </li>
+  </ol>
+
+  <h2 id="build-your-own">Build your own booking primitive</h2>
+
+  <p>The same pattern can be adapted to hotel booking, restaurant reservations, appointment scheduling, or event ticketing.</p>
+
+  <ol class="steps">
+    <li><strong>Define the external intent.</strong> Write the fields the LLM must extract: dates, location, number of guests, budget, preferences, and whether follow-up questions are allowed.</li>
+    <li><strong>Create one tool layer.</strong> Implement deterministic functions such as <code>search_hotels</code>, <code>search_slots</code>, or <code>search_tickets</code>. The LLM should choose tools, not call arbitrary URLs.</li>
+    <li><strong>Normalize results.</strong> Return stable fields like <code>option</code>, <code>price</code>, <code>provider</code>, and <code>booking_url</code>.</li>
+    <li><strong>Model the checkout session.</strong> Store collected fields and browser state server-side. Do not rely on frontend state as the source of truth.</li>
+    <li><strong>Write exact selectors first.</strong> Use stable attributes such as <code>name</code>, <code>data-test</code>, <code>autocomplete</code>, and accessible labels before fuzzy text matching.</li>
+    <li><strong>Define stop conditions.</strong> Price changes, cancellation policies, payment, and irreversible actions should ask the user.</li>
+    <li><strong>Expose a small API.</strong> Keep <code>/invoke</code> for search and <code>/sessions/*</code> for the stateful workflow.</li>
+  </ol>
+
+  <h2 id="design-principles">Design principles</h2>
+
+  <table>
+    <tr><th>Principle</th><th>Meaning</th><th>Practical test</th></tr>
+    <tr>
+      <td><strong>LLM for language</strong></td>
+      <td>The LLM extracts intent, normalizes user replies, and asks follow-up questions.</td>
+      <td>Can users answer naturally instead of writing JSON?</td>
+    </tr>
+    <tr>
+      <td><strong>Code for execution</strong></td>
+      <td>Selectors, field filling, and page transitions are deterministic and testable.</td>
+      <td>Can the same collected data produce the same browser actions twice?</td>
+    </tr>
+    <tr>
+      <td><strong>Backend-owned state</strong></td>
+      <td>The server stores collected fields and browser sessions.</td>
+      <td>Can a stale frontend render fail without corrupting the session?</td>
+    </tr>
+    <tr>
+      <td><strong>Human confirmation</strong></td>
+      <td>The primitive stops when money, policy, or irreversible actions are involved.</td>
+      <td>Does a price increase ask the user before continuing?</td>
+    </tr>
+  </table>
+
+  <h2 id="checklist">Checklist</h2>
+
+  <ul>
+    <li><code>/invoke</code> accepts natural language and returns structured flight options.</li>
+    <li>The LLM planner can ask follow-up questions when required search fields are missing.</li>
+    <li>Flight API parsing returns normalized, frontend-friendly results.</li>
+    <li>Booking sessions are stored on the backend and cleaned up when closed.</li>
+    <li>Playwright operations run in a stable execution context, not directly inside an async event loop.</li>
+    <li>The passenger extractor supports both one-field replies and full-sentence replies.</li>
+    <li>Phone numbers preserve country code and split it from the national number when filling the page.</li>
+    <li>Each browser step has a screenshot and structured status.</li>
+    <li>The primitive stops for price increases, payment, and ambiguous confirmations.</li>
+    <li>Real API keys and user identity data are never committed to the repository.</li>
+  </ul>
+</main>
+</div>
+</body>
+</html>
