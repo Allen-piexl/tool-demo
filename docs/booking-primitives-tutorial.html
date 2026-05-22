@@ -322,7 +322,8 @@ td { padding: 8px 12px; border: 1px solid var(--border); vertical-align: top; }
     <div class="sidebar-section-title">Tutorial</div>
     <a href="#overview" class="sidebar-link active">Overview</a>
     <a href="#what-is-booking-primitive" class="sidebar-link">What is it?</a>
-    <a href="#core-observation" class="sidebar-link">Core observation</a>
+    <a href="#llm-controller" class="sidebar-link">LLM controller</a>
+    <a href="#core-observation" class="sidebar-link">Workflow pattern</a>
     <a href="#architecture" class="sidebar-link">Architecture</a>
     <a href="#llm-contract" class="sidebar-link">LLM contract</a>
     <a href="#session-model" class="sidebar-link">Session model</a>
@@ -346,7 +347,7 @@ td { padding: 8px 12px; border: 1px solid var(--border); vertical-align: top; }
   </div>
 
   <h1 id="overview" class="page-title">Building Booking Primitives</h1>
-  <p class="page-meta">Tutorial &mdash; LLM-backed browser workflow primitive</p>
+  <p class="page-meta">Tutorial &mdash; designing an LLM-controlled booking workflow</p>
 
   <div class="tags">
     <span class="tag">LLM primitive</span>
@@ -359,39 +360,96 @@ td { padding: 8px 12px; border: 1px solid var(--border); vertical-align: top; }
   <div class="learn-box">
     <h4>What you will learn</h4>
     <ul>
-      <li>How a booking primitive differs from a simple API primitive like stock lookup</li>
-      <li>How to split the primitive into LLM planning, API search, session state, and browser execution</li>
-      <li>How to let the LLM handle user language while deterministic code handles fragile checkout pages</li>
-      <li>How to ask the user only when the workflow reaches a real confirmation or missing field</li>
-      <li>How to design your own booking-style primitive for another website</li>
+      <li>How to build a primitive where an LLM manages a multi-step booking workflow</li>
+      <li>How the LLM chooses tools, extracts arguments, tracks missing information, and decides when to ask the user</li>
+      <li>How deterministic tools execute the fragile parts: API calls, browser selectors, form filling, and page transitions</li>
+      <li>How to expose a clean primitive interface while hiding the internal booking complexity</li>
+      <li>How to stop safely at user-confirmation, policy, and payment boundaries</li>
     </ul>
   </div>
 
   <h2 id="what-is-booking-primitive">What is a Booking Primitive?</h2>
 
-  <p>A booking primitive is an LLM-backed tool primitive that does more than call one API. It converts a natural-language travel request into structured flight search arguments, calls a flight search backend, opens a live checkout session, collects missing passenger information, and drives the checkout page until it reaches payment or a user decision point.</p>
+  <p>A booking primitive is a self-contained LLM-managed workflow unit. It receives a natural-language user request, decides which tools are needed, calls those tools with structured arguments, opens and maintains a live booking session, asks the user for missing information, and advances the workflow until it reaches a stable endpoint such as payment or a user confirmation.</p>
 
-  <p>It still has the same basic shape as a simple primitive:</p>
+  <p>The primitive hides a multi-step process behind a small external interface. A client should not need to know how flight search, passenger forms, baggage choices, insurance pages, price-change confirmations, and payment pages are implemented internally. The client only sends user messages and receives structured primitive responses.</p>
+
+  <p>At the highest level, the primitive is an LLM controller wrapped around a tool environment:</p>
 
   <div class="code-block">
     <div class="code-block-header"><span class="lang">text</span></div>
     <pre><code>User message
-  -> LLM extracts structured intent
-  -> Tool/API call
-  -> Structured result
-  -> Natural-language answer</code></pre>
+  -> LLM controller decides the next action
+  -> Tool layer performs API or browser action
+  -> State store records what changed
+  -> LLM/controller decides whether to continue, ask, or stop
+  -> Primitive returns answer + structured status</code></pre>
   </div>
 
-  <p>The difference is that booking is a <strong>stateful workflow</strong>. Searching flights is one turn. Completing checkout takes many turns, and each turn depends on the live browser state.</p>
+  <p>This is why booking primitives are naturally stateful. Searching for options is one step. Completing a booking requires many turns, and each turn depends on both the user's data and the live browser state.</p>
 
   <div class="callout note">
     <strong>Key idea</strong>
-    A booking primitive should not make the LLM click random page elements. Use the LLM for language understanding and decision normalization. Use deterministic browser code for selectors, field filling, and repeatable page transitions.
+    The LLM manages the workflow, but it should not directly click random page elements. Use the LLM for language understanding, tool selection, field extraction, and decision routing. Use deterministic tools for API calls, selectors, field filling, and repeatable page transitions.
   </div>
 
-  <h2 id="core-observation">The core observation</h2>
+  <h2 id="llm-controller">The LLM as workflow controller</h2>
 
-  <p>Most booking flows share the same computational pattern even when the website changes:</p>
+  <p>The most important design choice is to make the LLM the controller of the primitive, not just a text parser. The controller repeatedly answers one question: <strong>given the user message, current collected data, and current workflow state, what should happen next?</strong></p>
+
+  <p>A useful controller action space is small and explicit:</p>
+
+  <table>
+    <tr><th>Action</th><th>Meaning</th><th>Example</th></tr>
+    <tr>
+      <td><code>ask_user</code></td>
+      <td>Required information is missing or a user decision is needed.</td>
+      <td>"What is the passenger's nationality?"</td>
+    </tr>
+    <tr>
+      <td><code>use_tool</code></td>
+      <td>The primitive has enough information to call a search or browser tool.</td>
+      <td>Call <code>search_oneway</code> with origin, destination, and date.</td>
+    </tr>
+    <tr>
+      <td><code>update_state</code></td>
+      <td>The user provided information that should be merged into session state.</td>
+      <td>Extract name, date of birth, email, and phone from one sentence.</td>
+    </tr>
+    <tr>
+      <td><code>continue_workflow</code></td>
+      <td>The browser can safely advance without new user input.</td>
+      <td>Fill passenger form and skip optional insurance.</td>
+    </tr>
+    <tr>
+      <td><code>stop</code></td>
+      <td>The workflow reached payment, completion, or an unsafe irreversible point.</td>
+      <td>Stop at payment and ask the user to complete payment manually.</td>
+    </tr>
+  </table>
+
+  <p>The primitive implementation does not have to expose these action names directly to the frontend. Internally, however, this action space keeps the LLM's job narrow and testable.</p>
+
+  <div class="code-block">
+    <div class="code-block-header"><span class="lang">text</span><span class="filename">controller loop</span></div>
+    <pre><code>while workflow is active:
+  observe user_message + session_state + browser_status
+  LLM chooses next action
+  if action == ask_user:
+      return question
+  if action == use_tool:
+      call API/search tool
+  if action == update_state:
+      merge extracted fields
+  if action == continue_workflow:
+      run deterministic browser actuator
+  if action == stop:
+      return final status</code></pre>
+  </div>
+
+  <h2 id="core-observation">The workflow pattern</h2>
+
+  <p>Most booking flows share the same computational pattern even when the supplier, route, and checkout page change. The primitive must interpret user intent, call search tools, maintain session state, execute deterministic UI actions, and stop for user confirmation before risky or irreversible steps.</p>
 
   <table>
     <tr>
@@ -401,37 +459,37 @@ td { padding: 8px 12px; border: 1px solid var(--border); vertical-align: top; }
     </tr>
     <tr>
       <td>Intent extraction</td>
-      <td>User says where, when, how many passengers, and whether it is one-way or round-trip.</td>
+      <td>User describes the task in natural language.</td>
       <td>LLM</td>
     </tr>
     <tr>
-      <td>Inventory lookup</td>
-      <td>Search API returns available options and booking URLs.</td>
-      <td>API tool</td>
+      <td>Tool planning</td>
+      <td>The primitive chooses which available search or browser tool to call and with which arguments.</td>
+      <td>LLM</td>
     </tr>
     <tr>
-      <td>Checkout opening</td>
-      <td>Browser opens the selected booking URL and detects the current step.</td>
+      <td>Workflow opening</td>
+      <td>Browser opens the selected target page and detects the current step.</td>
       <td>Browser actuator</td>
     </tr>
     <tr>
       <td>Information collection</td>
-      <td>User provides names, nationality, DOB, email, phone, and other required fields.</td>
+      <td>User provides required missing fields or choices.</td>
       <td>LLM plus session state</td>
     </tr>
     <tr>
-      <td>Form execution</td>
-      <td>Fields are filled, add-ons are skipped, and the page advances.</td>
+      <td>UI execution</td>
+      <td>Fields are filled, safe defaults are applied, and the page advances.</td>
       <td>Deterministic Playwright code</td>
     </tr>
     <tr>
       <td>User confirmation</td>
-      <td>Price increases, payment, or ambiguous choices require explicit user approval.</td>
+      <td>Risky, ambiguous, or irreversible actions require explicit user approval.</td>
       <td>User</td>
     </tr>
   </table>
 
-  <p>The primitive is useful because it packages this pattern behind a clean interface. The frontend does not need to know how Kiwi's passenger page works. It only sends messages to the primitive and receives a structured session response.</p>
+  <p>The primitive is useful because it packages this pattern behind a clean interface. The frontend does not need to know how the supplier's passenger page, baggage page, or payment page works. It only sends messages to the primitive and receives a structured response describing the current booking state.</p>
 
   <h2 id="architecture">Architecture</h2>
 
@@ -444,19 +502,19 @@ td { padding: 8px 12px; border: 1px solid var(--border); vertical-align: top; }
       </defs>
 
       <rect x="45" y="42" width="670" height="230" rx="10" fill="none" stroke="#ee4c2c" stroke-width="1.5" stroke-dasharray="6 3"/>
-      <text x="62" y="62" font-size="12" fill="#ee4c2c" font-weight="600" font-family="system-ui">KiwiBookingPrimitiveModel</text>
+      <text x="62" y="62" font-size="12" fill="#ee4c2c" font-weight="600" font-family="system-ui">Booking Primitive</text>
 
       <rect x="80" y="95" width="145" height="62" rx="6" fill="#f0f7ff" stroke="#3b82f6"/>
-      <text x="152" y="122" text-anchor="middle" font-size="13" font-weight="600" fill="#1e3a5f" font-family="system-ui">LLM Planner</text>
-      <text x="152" y="139" text-anchor="middle" font-size="10" fill="#3b82f6" font-family="system-ui">query -> tool args</text>
+      <text x="152" y="122" text-anchor="middle" font-size="13" font-weight="600" fill="#1e3a5f" font-family="system-ui">LLM Controller</text>
+      <text x="152" y="139" text-anchor="middle" font-size="10" fill="#3b82f6" font-family="system-ui">decide next action</text>
 
       <rect x="305" y="95" width="145" height="62" rx="6" fill="#f0fdf4" stroke="#22c55e"/>
-      <text x="377" y="122" text-anchor="middle" font-size="13" font-weight="600" fill="#166534" font-family="system-ui">Flight API Tool</text>
-      <text x="377" y="139" text-anchor="middle" font-size="10" fill="#16a34a" font-family="system-ui">search_oneway / roundtrip</text>
+      <text x="377" y="122" text-anchor="middle" font-size="13" font-weight="600" fill="#166534" font-family="system-ui">Tool Layer</text>
+      <text x="377" y="139" text-anchor="middle" font-size="10" fill="#16a34a" font-family="system-ui">search / read / act</text>
 
       <rect x="530" y="95" width="145" height="62" rx="6" fill="#fffbea" stroke="#f59e0b"/>
-      <text x="602" y="122" text-anchor="middle" font-size="13" font-weight="600" fill="#92620a" font-family="system-ui">Flight Options</text>
-      <text x="602" y="139" text-anchor="middle" font-size="10" fill="#b45309" font-family="system-ui">price + booking URL</text>
+      <text x="602" y="122" text-anchor="middle" font-size="13" font-weight="600" fill="#92620a" font-family="system-ui">Tool Results</text>
+      <text x="602" y="139" text-anchor="middle" font-size="10" fill="#b45309" font-family="system-ui">options + next URL</text>
 
       <rect x="80" y="192" width="145" height="62" rx="6" fill="#fef3f2" stroke="#ef4444"/>
       <text x="152" y="219" text-anchor="middle" font-size="13" font-weight="600" fill="#7f1d1d" font-family="system-ui">Session Store</text>
@@ -477,7 +535,7 @@ td { padding: 8px 12px; border: 1px solid var(--border); vertical-align: top; }
       <line x1="450" y1="223" x2="530" y2="223" stroke="#888" stroke-width="1.5" marker-end="url(#arr)"/>
       <line x1="530" y1="238" x2="225" y2="238" stroke="#888" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#arr)"/>
 
-      <text x="380" y="300" text-anchor="middle" font-size="12" fill="#888" font-family="system-ui">The LLM manages language and structured decisions; deterministic code manages browser state and page actions.</text>
+      <text x="380" y="300" text-anchor="middle" font-size="12" fill="#888" font-family="system-ui">The LLM controls the workflow; deterministic tools execute API calls and browser actions.</text>
     </svg>
     <figcaption>Fig 1. The booking primitive combines LLM planning, API search, stateful user data extraction, and browser execution.</figcaption>
   </figure>
@@ -710,12 +768,12 @@ COLLECTED <span class="op">=</span> {}
 
   <h2 id="build-your-own">Build your own booking primitive</h2>
 
-  <p>The same pattern can be adapted to hotel booking, restaurant reservations, appointment scheduling, or event ticketing.</p>
+  <p>To build a booking primitive, start from the booking boundary rather than from the website UI. The primitive should own the search intent, selected option, collected passenger data, live browser session, and stopping rules.</p>
 
   <ol class="steps">
-    <li><strong>Define the external intent.</strong> Write the fields the LLM must extract: dates, location, number of guests, budget, preferences, and whether follow-up questions are allowed.</li>
-    <li><strong>Create one tool layer.</strong> Implement deterministic functions such as <code>search_hotels</code>, <code>search_slots</code>, or <code>search_tickets</code>. The LLM should choose tools, not call arbitrary URLs.</li>
-    <li><strong>Normalize results.</strong> Return stable fields like <code>option</code>, <code>price</code>, <code>provider</code>, and <code>booking_url</code>.</li>
+    <li><strong>Define the booking intent.</strong> Write the fields the LLM must extract: origin, destination, dates, passenger count, cabin class, budget, baggage preference, and follow-up questions.</li>
+    <li><strong>Create one tool layer.</strong> Implement deterministic functions such as <code>search_oneway</code>, <code>search_roundtrip</code>, and <code>open_booking_page</code>. The LLM should choose from known tools, not call arbitrary URLs.</li>
+    <li><strong>Normalize results.</strong> Return stable fields like <code>option_id</code>, <code>price</code>, <code>carrier</code>, <code>legs</code>, <code>baggage</code>, and <code>booking_url</code>.</li>
     <li><strong>Model the checkout session.</strong> Store collected fields and browser state server-side. Do not rely on frontend state as the source of truth.</li>
     <li><strong>Write exact selectors first.</strong> Use stable attributes such as <code>name</code>, <code>data-test</code>, <code>autocomplete</code>, and accessible labels before fuzzy text matching.</li>
     <li><strong>Define stop conditions.</strong> Price changes, cancellation policies, payment, and irreversible actions should ask the user.</li>
