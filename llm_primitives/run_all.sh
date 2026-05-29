@@ -3,20 +3,35 @@ set -e
 
 export PYTHONPATH=$(pwd)
 
-uvicorn stock_primitive.server:app --host 0.0.0.0 --port ${STOCK_PORT:-8001} &
+uvicorn router_service.server:app --host 0.0.0.0 --port ${ROUTER_PORT:-8000} &
+PID0=$!
+(
+  export PRIMITIVE_ID=stock
+  uvicorn ondemand_gateway:app --host 0.0.0.0 --port ${STOCK_PORT:-8001}
+) &
 PID1=$!
-uvicorn news_primitive.server:app --host 0.0.0.0 --port ${NEWS_PORT:-8002} &
+(
+  export PRIMITIVE_ID=news
+  uvicorn ondemand_gateway:app --host 0.0.0.0 --port ${NEWS_PORT:-8002}
+) &
 PID2=$!
-uvicorn amazon_primitive.server:app --host 0.0.0.0 --port ${AMAZON_PORT:-8003} &
+(
+  export PRIMITIVE_ID=amazon
+  uvicorn ondemand_gateway:app --host 0.0.0.0 --port ${AMAZON_PORT:-8003}
+) &
 PID3=$!
-uvicorn kiwi_booking_primitive.server:app --host 0.0.0.0 --port ${KIWI_PORT:-8010} &
+(
+  export PRIMITIVE_ID=kiwi
+  uvicorn ondemand_gateway:app --host 0.0.0.0 --port ${KIWI_PORT:-8010}
+) &
 PID4=$!
 
-echo "StockPrimitiveModel running on http://localhost:${STOCK_PORT:-8001}"
-echo "NewsPrimitiveModel running on http://localhost:${NEWS_PORT:-8002}"
-echo "AmazonPrimitiveModel running on http://localhost:${AMAZON_PORT:-8003}"
-echo "KiwiBookingPrimitiveModel running on http://localhost:${KIWI_PORT:-8010}"
+echo "PrimitiveRouterService running on http://localhost:${ROUTER_PORT:-8000}"
+echo "StockPrimitiveModel gateway running on http://localhost:${STOCK_PORT:-8001}"
+echo "NewsPrimitiveModel gateway running on http://localhost:${NEWS_PORT:-8002}"
+echo "AmazonPrimitiveModel gateway running on http://localhost:${AMAZON_PORT:-8003}"
+echo "KiwiBookingPrimitiveModel gateway running on http://localhost:${KIWI_PORT:-8010}"
 echo "Press Ctrl+C to stop."
 
-trap "kill $PID1 $PID2 $PID3 $PID4" EXIT
+trap "kill $PID0 $PID1 $PID2 $PID3 $PID4" EXIT
 wait

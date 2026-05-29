@@ -10,14 +10,14 @@ import requests
 def extract_json(text: str) -> dict[str, Any]:
     text = text.strip()
     try:
-        return json.loads(text)
+        return json.loads(text, strict=False)
     except Exception:
         pass
 
     match = re.search(r"\{.*\}", text, flags=re.DOTALL)
     if not match:
         raise ValueError(f"No JSON object found in model output: {text[:500]}")
-    return json.loads(match.group(0))
+    return json.loads(match.group(0), strict=False)
 
 
 class OllamaClient:
